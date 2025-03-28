@@ -170,3 +170,4 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 backend/config/firebase_credentials.json
+backend/firebase_key.json
