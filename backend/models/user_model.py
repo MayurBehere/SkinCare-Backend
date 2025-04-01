@@ -20,3 +20,10 @@ class User:
     @staticmethod
     def find_by_uid(uid):
         return User.collection.find_one({"uid": uid})
+
+    @staticmethod
+    def update_name(uid, name):
+        User.collection.update_one({"uid": uid}, {"$set": {"name": name}})
+
+    
+
