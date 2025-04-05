@@ -89,26 +89,30 @@ def check_user_info():
 @auth_bp.route('/update-name', methods=['POST'])
 @cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def update_name():
-    """
-    Updates the user's name in MongoDB.
-    """
     try:
         data = request.get_json()
         uid = data.get('uid')
         name = data.get('name')
 
+        print(f"📌 Received update-name request: UID={uid}, Name={name}")  # Debug
+
         if not uid or not name:
+            print("❌ Missing UID or Name in request")
             return jsonify({'error': 'UID and Name are required'}), 400
 
-        # Find user and update name
+        # Check if the user exists before updating
         user = User.find_by_uid(uid)
         if not user:
+            print(f"❌ User with UID {uid} not found in DB")
             return jsonify({'error': 'User not found'}), 404
 
-        # Update the user's name
-        User.update_user(uid, {"name": name})
+        # Update name
+        User.update_name(uid, name)
 
+        print("✅ Name updated successfully")
         return jsonify({'message': 'User name updated successfully'}), 200
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"🔥 Internal Server Error: {str(e)}")  # Log exact error
+        traceback.print_exc()
+        return jsonify({'error': 'Internal Server Error', 'details': str(e)}), 500
