@@ -25,8 +25,6 @@ def start_session():
         uid = data.get("uid")
         session_name = data.get("session_name")
 
-        print(f"Received request: uid={uid}, session_name={session_name}")
-
         if not uid or not session_name:
             return jsonify({"error": "UID and session name are required"}), 400
 
@@ -36,8 +34,6 @@ def start_session():
         return jsonify({"session_id": session_id, "session_name": session_name}), 201
 
     except Exception as e:
-        print(f"Error in start_session: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @session_bp.route('/get-sessions', methods=['GET', 'POST'])
@@ -51,13 +47,9 @@ def get_sessions():
 
         sessions = Session.get_user_sessions(uid)
 
-        print(f"Sending sessions to frontend: {sessions}")
-
         return jsonify({'sessions': sessions}), 200
 
     except Exception as e:
-        print(f"Error in get_sessions: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @session_bp.route("/<session_id>", methods=["GET"])
@@ -74,7 +66,6 @@ def fetch_session_details(session_id):
         else:
             return jsonify({"error": "Session not found"}), 404
     except Exception as e:
-        print(f"Error fetching session: {e}")
         return jsonify({"error": "Failed to fetch session"}), 500
     try:
         session = Session.get_session_by_id(session_id)
@@ -83,7 +74,6 @@ def fetch_session_details(session_id):
         else:
             return jsonify({"error": "Session not found"}), 404
     except Exception as e:
-        print(f"Error fetching session: {e}")
         return jsonify({"error": "Failed to fetch session"}), 500
 
 @session_bp.route("/delete-session/<session_id>", methods=["DELETE"])
@@ -98,8 +88,6 @@ def delete_session(session_id):
             return jsonify({"error": message}), 404
 
     except Exception as e:
-        print(f"Error in delete_session: {str(e)}")
-        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @session_bp.route("/<session_id>/upload-image", methods=["POST", "OPTIONS"])
@@ -110,7 +98,6 @@ def upload_images(session_id):
 
     try:
         data = request.get_json()
-        print("Received upload request data:", data)
 
         uid = data.get("uid")
         image_objects = data.get("image_urls")
@@ -133,7 +120,6 @@ def upload_images(session_id):
 
         # 🧠 CLASSIFY AUTOMATICALLY
         image_url = image_objects[0]["url"]
-        print(f"[🌐] Downloading image from {image_url}")
 
         response = requests.get(image_url)
         if response.status_code != 200:
@@ -149,18 +135,13 @@ def upload_images(session_id):
         ext = image.format.lower() if image.format else "jpg"
         temp_path = os.path.join(UPLOAD_FOLDER, f"{session_id}.{ext}")
         image.save(temp_path)
-        print(f"[💾] Saved temporary image to {temp_path}")
 
         try:
-            print(f"[🧠] Classifying image for session {session_id}")
             result = classify_image(temp_path)
-            print(f"[✅] Classification result: {result}")
         except Exception as model_error:
-            print(f"[❌] Error in model prediction: {model_error}")
             return jsonify({"error": "Model failed to classify the image."}), 500
         finally:
             os.remove(temp_path)
-            print(f"[🧹] Temp file deleted")
 
         # 🔄 Save result
         success, message = Session.update_classification_results(session_id, result)
@@ -174,8 +155,6 @@ def upload_images(session_id):
         }), 200
 
     except Exception as e:
-        print("Error in upload_images:", str(e))
-        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @session_bp.route("/<session_id>/classify", methods=["POST"])
@@ -187,7 +166,6 @@ def classify_uploaded_image(session_id):
             return jsonify({"error": "No image found in session"}), 404
 
         image_url = session_data["images"][0]["url"]
-        print(f"[🌐] Downloading image from {image_url}")
 
         response = requests.get(image_url)
         if response.status_code != 200:
@@ -203,18 +181,13 @@ def classify_uploaded_image(session_id):
         ext = image.format.lower() if image.format else "jpg"
         temp_path = os.path.join(UPLOAD_FOLDER, f"{session_id}.{ext}")
         image.save(temp_path)
-        print(f"[💾] Saved temporary image to {temp_path}")
 
         try:
-            print(f"[🧠] Classifying image for session {session_id}")
             result = classify_image(temp_path)
-            print(f"[✅] Classification result: {result}")
         except Exception as model_error:
-            print(f"[❌] Error in model prediction: {model_error}")
             return jsonify({"error": "Model failed to classify the image."}), 500
         finally:
             os.remove(temp_path)
-            print(f"[🧹] Temp file deleted")
 
         success, message = Session.update_classification_results(session_id, result)
 
@@ -224,8 +197,6 @@ def classify_uploaded_image(session_id):
             return jsonify({"error": message}), 500
 
     except Exception as e:
-        print("Error in classify_uploaded_image:", str(e))
-        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @session_bp.route("/<session_id>/update-classification", methods=["POST"])
@@ -235,21 +206,14 @@ def update_classification(session_id):
         data = request.get_json()
 
         if not data:
-            print(f"[❌] No data received for session {session_id}")
             return jsonify({"error": "No data received"}), 400
-
-        print(f"Received classification update for session {session_id}: {data}")
 
         success, message = Session.update_classification_results(session_id, data)
 
         if success:
-            print(f"[✅] Classification update successful for session {session_id}")
             return jsonify({"message": message}), 200
         else:
-            print(f"[⚠️] Classification update failed: {message}")
             return jsonify({"error": message}), 404
 
     except Exception as e:
-        print("Error in update_classification:", str(e))
-        print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
