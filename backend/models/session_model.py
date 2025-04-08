@@ -3,13 +3,14 @@ from datetime import datetime
 import uuid
 
 class Session:
+
     @staticmethod
     def store_image(uid, session_id, image_url):
         db.sessions.update_one(
             {"uid": uid, "session_id": session_id},
             {"$push": {"images": image_url}}
         )
-    
+
     @staticmethod
     def create_session(uid, session_id, session_name):
         """Create a new session with a name."""
@@ -18,37 +19,23 @@ class Session:
             "session_id": session_id,
             "session_name": session_name,  # Make sure this is saved
             "images": [],
-            "classification_results": None,  # Initialize with None
             "created_at": datetime.now()
         })
         return session_id
-    
+
     @staticmethod
     def get_user_sessions(uid):
         """Get all sessions for a user including session names."""
         sessions = list(db.sessions.find(
             {"uid": uid},
-            {"_id": 0, "uid": 1, "session_id": 1, "session_name": 1, "created_at": 1, "images": 1, "classification_results": 1}
+            {"_id": 0, "uid": 1, "session_id": 1, "session_name": 1, "created_at": 1}  # Include session_name
         ))
         
         # Debug output
         print(f"Retrieved sessions for {uid}: {sessions}")
         
         return sessions
-    
-    @staticmethod
-    def get_session_by_id(session_id):
-        """Get a single session by its ID."""
-        session = db.sessions.find_one(
-            {"session_id": session_id},
-            {"_id": 0}  # Exclude MongoDB's internal ID
-        )
-        
-        # Debug output
-        print(f"Fetched session for session_id {session_id}: {session}")
-        
-        return session
-    
+
     @staticmethod
     def delete_session(session_id):
         """Delete a session by ID."""
@@ -58,87 +45,23 @@ class Session:
         return False, "Session not found"
     
     @staticmethod
-    def add_images_to_session(uid, session_id, image_url):
-        if not uid or not session_id or not image_url:
+    def add_images_to_session(uid, session_id, image_urls):
+        if not uid or not session_id or not image_urls:
             return False, "Missing parameters"
-        
+
         try:
-            # Update to handle a single image
+            # Make sure this matches your collection schema
             result = db.sessions.update_one(
                 {"uid": uid, "session_id": session_id},
-                {"$push": {"images": image_url}}
+                {"$push": {"images": {"$each": image_urls}}}
             )
-            
+
             if result.matched_count == 0:
                 return False, "Session not found"
-                
-            return True, "Image added successfully"
+            
+            return True, "Images added successfully"
         except Exception as e:
             print("❌ DB Error in add_images_to_session:", str(e))
             return False, f"Internal server error: {str(e)}"
-    
-    @staticmethod
-    def update_classification_results(session_id, classification_results):
-        try:
-            if not isinstance(classification_results, dict):
-                return False, "Invalid classification result format"
-
-            print(f"[📝] Updating session {session_id} with result: {classification_results}")
-
-            results_data = {
-                "acne_type": classification_results.get("acne_type"),
-                "confidence": classification_results.get("confidence"),
-                "recommendations": classification_results.get("recommendations"),
-                "classified_at": datetime.now()
-            }
-
-            result = db.sessions.update_one(
-                {"session_id": session_id},
-                {"$set": {
-                    "classification_results": results_data,
-                    "updated_at": datetime.now()
-                }}
-            )
-
-            if result.matched_count == 0:
-                return False, "Session not found"
-
-            if result.modified_count == 1:
-                return True, "Classification results updated successfully"
-            return True, "Classification already up-to-date"
-
-        except Exception as e:
-            print(f"❌ DB Error in update_classification_results: {str(e)}")
-            return False, f"Internal server error: {str(e)}"
-
-    
-    @staticmethod
-    def get_image_url_by_session_id(session_id):
-        """
-        Get the first image URL from a session
         
-        Args:
-            session_id (str): The session ID
-            
-        Returns:
-            str or None: The image URL or None if not found
-        """
-        try:
-            session = db.sessions.find_one(
-                {"session_id": session_id},
-                {"_id": 0, "images": 1}
-            )
-            
-            if not session or not session.get("images") or len(session["images"]) == 0:
-                return None
-                
-            # Handle both cases: image as string URL or as dict with url key
-            first_image = session["images"][0]
-            if isinstance(first_image, dict) and "url" in first_image:
-                return first_image["url"]
-            
-            return first_image  # Return the image URL
-            
-        except Exception as e:
-            print(f"❌ DB Error in get_image_url_by_session_id: {str(e)}")
-            return None
+        

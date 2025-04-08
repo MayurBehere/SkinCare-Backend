@@ -4,16 +4,6 @@ from flask_cors import cross_origin
 import traceback
 import uuid
 from config.database import db
-from ml_model.classifier import classify_image
-import os
-import requests
-from PIL import Image
-from io import BytesIO
-
-UPLOAD_FOLDER = "uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-sessions_collection = db.sessions
 
 session_bp = Blueprint('session', __name__)
 
@@ -59,7 +49,6 @@ def get_sessions_by_uid():
         print(traceback.format_exc())
         return jsonify({"error": "Failed to fetch sessions"}), 500
 
-# Now the generic session_id route comes AFTER the specific routes
 @session_bp.route("/<session_id>", methods=["GET"])
 @cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def fetch_session_details(session_id):
@@ -76,8 +65,15 @@ def fetch_session_details(session_id):
     except Exception as e:
         print(f"Error fetching session: {e}")
         return jsonify({"error": "Failed to fetch session"}), 500
-
-# Removed the duplicate try/except block in fetch_session_details
+    try:
+        session = Session.get_session_by_id(session_id)
+        if session:
+            return jsonify(session), 200
+        else:
+            return jsonify({"error": "Session not found"}), 404
+    except Exception as e:
+        print(f"Error fetching session: {e}")
+        return jsonify({"error": "Failed to fetch session"}), 500
 
 @session_bp.route("/delete-session/<session_id>", methods=["DELETE"])
 @cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
@@ -98,17 +94,18 @@ def delete_session(session_id):
 @session_bp.route("/<session_id>/upload-image", methods=["POST", "OPTIONS"])
 @cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def upload_images(session_id):
+    # For OPTIONS requests, just return headers
     if request.method == "OPTIONS":
         return "", 200
-
+    
     try:
         data = request.get_json()
         print("Received upload request data:", data)
 
         uid = data.get("uid")
-        image_objects = data.get("image_urls")
+        image_urls = data.get("image_urls")
 
-        if not uid or not image_objects:
+        if not uid or not image_urls:
             return jsonify({"error": "Missing uid or image URLs"}), 400
 
         if len(image_objects) > 1:
@@ -119,7 +116,8 @@ def upload_images(session_id):
                 return jsonify({"error": "Invalid image object format."}), 400
 
         # 🔄 Upload image
-        success, message = Session.add_images_to_session(uid, session_id, image_objects[0])
+        success, message = Session.add_images_to_session(uid, session_id, image_objects)
+
         if not success:
             return jsonify({"error": message}), 500
 
@@ -211,13 +209,13 @@ def classify_uploaded_image(session_id):
         success, message = Session.update_classification_results(session_id, result)
 
         if success:
-            return jsonify({"result": result}), 200
+            return jsonify({"message": message}), 200
         else:
             return jsonify({"error": message}), 500
 
     except Exception as e:
-        print("Error in classify_uploaded_image:", str(e))
-        print(traceback.format_exc())
+        print("Error in upload_images:", str(e))
+        print(traceback.format_exc())  # Add full traceback for debugging
         return jsonify({"error": str(e)}), 500
 
 @session_bp.route("/<session_id>/update-classification", methods=["POST"])

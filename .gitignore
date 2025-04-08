@@ -171,5 +171,3 @@ cython_debug/
 .pypirc
 backend/config/firebase_credentials.json
 backend/firebase_key.json
-backend/ml_model/do7.keras
-firebase_credentials.json
