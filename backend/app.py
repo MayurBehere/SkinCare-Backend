@@ -20,7 +20,6 @@ if not os.environ.get("FLASK_RUN_FROM_CLI"):
 # Register Blueprints
 app.register_blueprint(auth_bp, url_prefix='/auth')  
 app.register_blueprint(session_bp, url_prefix='/session')
-# app.register_blueprint(session_bp, url_prefix='/api/session')  
 
 @app.route("/", methods=["GET"])
 def home():

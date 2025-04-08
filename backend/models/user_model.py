@@ -45,5 +45,3 @@ class User:
         except Exception as e:
             print(f"🔥 Error in update_name: {str(e)}")  # Print exact error in console
             raise
-
-
