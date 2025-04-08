@@ -216,7 +216,6 @@ def update_classification(session_id):
             return jsonify({"error": message}), 404
 
     except Exception as e:
-<<<<<<< HEAD
         print("Error in update_classification:", str(e))
         print(traceback.format_exc())
 =======
