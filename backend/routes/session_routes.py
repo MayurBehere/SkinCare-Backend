@@ -59,7 +59,7 @@ def get_sessions():
         print(f"Error in get_sessions: {str(e)}")
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
-
+    
 @session_bp.route("/<session_id>", methods=["GET"])
 @cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def fetch_session_details(session_id):
@@ -69,22 +69,14 @@ def fetch_session_details(session_id):
             return jsonify({
                 "session_name": session.get("session_name"),
                 "image_url": session.get("images", [{}])[0].get("url") if session.get("images") else None,
-                "prediction": session.get("result")
+                "classification_results": session.get("classification_results")
             }), 200
         else:
             return jsonify({"error": "Session not found"}), 404
     except Exception as e:
         print(f"Error fetching session: {e}")
         return jsonify({"error": "Failed to fetch session"}), 500
-    try:
-        session = Session.get_session_by_id(session_id)
-        if session:
-            return jsonify(session), 200
-        else:
-            return jsonify({"error": "Session not found"}), 404
-    except Exception as e:
-        print(f"Error fetching session: {e}")
-        return jsonify({"error": "Failed to fetch session"}), 500
+    
 
 @session_bp.route("/delete-session/<session_id>", methods=["DELETE"])
 @cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
@@ -118,21 +110,24 @@ def upload_images(session_id):
         if not uid or not image_objects:
             return jsonify({"error": "Missing uid or image URLs"}), 400
 
-        if len(image_objects) > 1:
+        # ✅ Enforce single image only
+        if not isinstance(image_objects, list) or len(image_objects) != 1:
             return jsonify({"error": "Only one image allowed per session."}), 400
 
-        for img in image_objects:
-            if not isinstance(img, dict) or "url" not in img or "delete_url" not in img:
-                return jsonify({"error": "Invalid image object format."}), 400
+        image_object = image_objects[0]
 
-        # 🔄 Upload image
-        success, message = Session.add_images_to_session(uid, session_id, image_objects)
+        # ✅ Validate image object
+        if not isinstance(image_object, dict) or "url" not in image_object or "delete_url" not in image_object:
+            return jsonify({"error": "Invalid image object format. Must be a dict with 'url' and 'delete_url'."}), 400
+
+        # 🔄 Upload image to DB
+        success, message = Session.add_images_to_session(uid, session_id, image_object)
 
         if not success:
             return jsonify({"error": message}), 500
 
         # 🧠 CLASSIFY AUTOMATICALLY
-        image_url = image_objects[0]["url"]
+        image_url = image_object["url"]
         print(f"[🌐] Downloading image from {image_url}")
 
         response = requests.get(image_url)
@@ -162,7 +157,7 @@ def upload_images(session_id):
             os.remove(temp_path)
             print(f"[🧹] Temp file deleted")
 
-        # 🔄 Save result
+        # 🔄 Save classification result
         success, message = Session.update_classification_results(session_id, result)
 
         if not success:
@@ -177,6 +172,7 @@ def upload_images(session_id):
         print("Error in upload_images:", str(e))
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
+
 
 @session_bp.route("/<session_id>/classify", methods=["POST"])
 @cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
