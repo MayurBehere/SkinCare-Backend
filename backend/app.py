@@ -4,14 +4,18 @@ from routes.auth_routes import auth_bp
 from routes.session_routes import session_bp
 from config.firebase_config import init_firebase
 import os
+from datetime import timedelta
 
 app = Flask(__name__)
 
 # ✅ Apply CORS to the entire app
-CORS(app, origins=["http://localhost:5173"], 
+CORS(app,
+     origins="http://localhost:5173",  # Make this a single string, not a list
      supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     allow_headers=["Content-Type", "Authorization"])
+     expose_headers=["Content-Type", "Authorization"],
+     max_age=timedelta(hours=1))  # Optional: helps with caching preflight
 
 # Initialize Firebase
 if not os.environ.get("FLASK_RUN_FROM_CLI"):

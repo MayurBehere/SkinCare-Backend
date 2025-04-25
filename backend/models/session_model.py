@@ -1,6 +1,6 @@
 from config.database import db
-from datetime import datetime
 import uuid
+import datetime
 
 class Session:
     @staticmethod
@@ -19,7 +19,7 @@ class Session:
             "session_name": session_name,
             "images": [],
             "classification_results": None,
-            "created_at": datetime.now()
+            "created_at": datetime.datetime.now()
         })
         return session_id
 
@@ -93,18 +93,21 @@ class Session:
 
             print(f"[📝] Updating session {session_id} with result: {classification_results}")
 
+            # Fix for accessing nested structure
             results_data = {
-                "acne_type": classification_results.get("acne_type"),
-                "confidence": classification_results.get("confidence"),
-                "recommendations": classification_results.get("recommendations"),
-                "classified_at": datetime.now()
+                "acne_type": classification_results.get("classification", {}).get("acne_type"),
+                "confidence": classification_results.get("classification", {}).get("confidence"),
+                "recommendations": classification_results.get("recommendation"),  # Note: singular not plural
+                "classified_at": datetime.datetime.now()
             }
+
+            print(f"[🔍] Database update with data: {results_data}")
 
             result = db.sessions.update_one(
                 {"session_id": session_id},
                 {"$set": {
                     "classification_results": results_data,
-                    "updated_at": datetime.now()
+                    "updated_at": datetime.datetime.now()
                 }}
             )
 

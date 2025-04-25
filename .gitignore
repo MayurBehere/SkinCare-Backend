@@ -173,3 +173,6 @@ backend/config/firebase_credentials.json
 backend/firebase_key.json
 firebase_credentials.json
 backend/ml_model/do7.keras
+backend/ml_model/do9.keras
+backend/ml_model/index_data/index.faiss
+backend/ml_model/index_data/index.pkl

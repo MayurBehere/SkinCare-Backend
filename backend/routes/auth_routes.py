@@ -7,7 +7,6 @@ import traceback
 auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/verify-token', methods=['POST'])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def verify_token():
     """
     Verifies Firebase ID token and creates the user in MongoDB if not already present.
@@ -17,21 +16,37 @@ def verify_token():
         data = request.get_json()
         print(f"📦 Request Data: {data}")
 
-        id_token = data.get('idToken') or data.get('token')
+        id_token = data.get('idToken')
         if not id_token:
             print("❌ No token found in request")
             return jsonify({'error': 'Token is required'}), 400
+
+        print(f"🔑 Received ID Token: {id_token}")  # Log the received token
 
         # Verify Firebase ID Token
         try:
             decoded_token = auth.verify_id_token(id_token)
             print(f"🔑 Token Decoded: {decoded_token}")
+
+            # Validate token claims
+            project_id = "skincare-cbf73"  # Replace with your Firebase project ID
+            if decoded_token.get('aud') != project_id:
+                print("❌ Token audience mismatch")
+                return jsonify({'error': 'Invalid token audience'}), 401
+
+            if not decoded_token.get('iss', '').startswith("https://securetoken.google.com/"):
+                print("❌ Token issuer mismatch")
+                return jsonify({'error': 'Invalid token issuer'}), 401
+
         except auth.InvalidIdTokenError:
             print("❌ Invalid Firebase ID token")
             return jsonify({'error': 'Invalid Firebase ID token'}), 401
         except auth.ExpiredIdTokenError:
             print("❌ Firebase ID token has expired")
             return jsonify({'error': 'Firebase ID token has expired'}), 401
+        except ValueError as e:
+            print(f"❌ Malformed token: {str(e)}")
+            return jsonify({'error': 'Malformed Firebase ID token'}), 400
         except Exception as e:
             print(f"❌ Token verification failed: {str(e)}")
             traceback.print_exc()
@@ -73,7 +88,6 @@ def verify_token():
 
 
 @auth_bp.route('/check-user-info', methods=['GET', 'POST'])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def check_user_info():
     """
     Checks if the user's name is "Unknown" and requires an update.
@@ -105,7 +119,6 @@ def check_user_info():
 
 
 @auth_bp.route('/update-name', methods=['POST'])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def update_name():
     try:
         print("📥 Received /update-name request")

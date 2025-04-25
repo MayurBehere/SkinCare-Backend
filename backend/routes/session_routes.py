@@ -4,11 +4,11 @@ from flask_cors import cross_origin
 import traceback
 import uuid
 from config.database import db
-from ml_model.classifier import classify_image
-import os
+from ml_model.classifier import classify_and_recommend 
 import requests
 from PIL import Image
 from io import BytesIO
+import os
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -18,7 +18,6 @@ sessions_collection = db.sessions
 session_bp = Blueprint('session', __name__)
 
 @session_bp.route('/start-session', methods=['POST'])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def start_session():
     try:
         data = request.json
@@ -41,7 +40,6 @@ def start_session():
         return jsonify({"error": str(e)}), 500
 
 @session_bp.route('/get-sessions', methods=['GET', 'POST'])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def get_sessions():
     try:
         uid = request.json.get("uid") if request.method == 'POST' else request.args.get("uid")
@@ -61,7 +59,6 @@ def get_sessions():
         return jsonify({'error': str(e)}), 500
     
 @session_bp.route("/<session_id>", methods=["GET"])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def fetch_session_details(session_id):
     try:
         session = Session.get_session_by_id(session_id)
@@ -79,7 +76,6 @@ def fetch_session_details(session_id):
     
 
 @session_bp.route("/delete-session/<session_id>", methods=["DELETE"])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def delete_session(session_id):
     try:
         success, message = Session.delete_session(session_id)
@@ -95,7 +91,6 @@ def delete_session(session_id):
         return jsonify({"error": str(e)}), 500
 
 @session_bp.route("/<session_id>/upload-image", methods=["POST", "OPTIONS"])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def upload_images(session_id):
     if request.method == "OPTIONS":
         return "", 200
@@ -110,23 +105,20 @@ def upload_images(session_id):
         if not uid or not image_objects:
             return jsonify({"error": "Missing uid or image URLs"}), 400
 
-        # ✅ Enforce single image only
         if not isinstance(image_objects, list) or len(image_objects) != 1:
             return jsonify({"error": "Only one image allowed per session."}), 400
 
         image_object = image_objects[0]
 
-        # ✅ Validate image object
         if not isinstance(image_object, dict) or "url" not in image_object or "delete_url" not in image_object:
             return jsonify({"error": "Invalid image object format. Must be a dict with 'url' and 'delete_url'."}), 400
 
         # 🔄 Upload image to DB
         success, message = Session.add_images_to_session(uid, session_id, image_object)
-
         if not success:
             return jsonify({"error": message}), 500
 
-        # 🧠 CLASSIFY AUTOMATICALLY
+        # 🧠 CLASSIFY + RECOMMEND
         image_url = image_object["url"]
         print(f"[🌐] Downloading image from {image_url}")
 
@@ -147,9 +139,9 @@ def upload_images(session_id):
         print(f"[💾] Saved temporary image to {temp_path}")
 
         try:
-            print(f"[🧠] Classifying image for session {session_id}")
-            result = classify_image(temp_path)
-            print(f"[✅] Classification result: {result}")
+            print(f"[🧠] Running classification and recommendation for session {session_id}")
+            result = classify_and_recommend(image_url)  # ✅ UPDATED FUNCTION
+            print(f"[✅] Classification + Recommendation result:\n{result}")
         except Exception as model_error:
             print(f"[❌] Error in model prediction: {model_error}")
             return jsonify({"error": "Model failed to classify the image."}), 500
@@ -157,7 +149,7 @@ def upload_images(session_id):
             os.remove(temp_path)
             print(f"[🧹] Temp file deleted")
 
-        # 🔄 Save classification result
+        # 🔄 Save classification + recommendation
         success, message = Session.update_classification_results(session_id, result)
 
         if not success:
@@ -173,9 +165,7 @@ def upload_images(session_id):
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-
 @session_bp.route("/<session_id>/classify", methods=["POST"])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def classify_uploaded_image(session_id):
     try:
         session_data = Session.get_session_by_id(session_id)
@@ -202,9 +192,9 @@ def classify_uploaded_image(session_id):
         print(f"[💾] Saved temporary image to {temp_path}")
 
         try:
-            print(f"[🧠] Classifying image for session {session_id}")
-            result = classify_image(temp_path)
-            print(f"[✅] Classification result: {result}")
+            print(f"[🧠] Running classification and recommendation for session {session_id}")
+            result = classify_and_recommend(temp_path)  # ✅ UPDATED FUNCTION
+            print(f"[✅] Classification + Recommendation result:\n{result}")
         except Exception as model_error:
             print(f"[❌] Error in model prediction: {model_error}")
             return jsonify({"error": "Model failed to classify the image."}), 500
@@ -212,6 +202,7 @@ def classify_uploaded_image(session_id):
             os.remove(temp_path)
             print(f"[🧹] Temp file deleted")
 
+        # 🔄 Update in MongoDB
         success, message = Session.update_classification_results(session_id, result)
 
         if success:
@@ -225,7 +216,6 @@ def classify_uploaded_image(session_id):
         return jsonify({"error": str(e)}), 500
 
 @session_bp.route("/<session_id>/update-classification", methods=["POST"])
-@cross_origin(origins=["http://localhost:5173"], supports_credentials=True)
 def update_classification(session_id):
     try:
         data = request.get_json()
@@ -234,9 +224,19 @@ def update_classification(session_id):
             print(f"[❌] No data received for session {session_id}")
             return jsonify({"error": "No data received"}), 400
 
-        print(f"Received classification update for session {session_id}: {data}")
+        classification = data.get("classification")
+        recommendations = data.get("recommendations")
 
-        success, message = Session.update_classification_results(session_id, data)
+        print(f"[📩] Received classification update for session {session_id}")
+        print(f"   🧾 Classification: {classification}")
+        print(f"   💡 Recommendations: {recommendations}")
+
+        result_data = {
+            "classification": classification,
+            "recommendations": recommendations
+        }
+
+        success, message = Session.update_classification_results(session_id, result_data)
 
         if success:
             print(f"[✅] Classification update successful for session {session_id}")
