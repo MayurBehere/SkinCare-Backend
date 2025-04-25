@@ -1,6 +1,7 @@
 from config.database import db
 import uuid
 import datetime
+import os
 
 class Session:
     @staticmethod
@@ -38,7 +39,8 @@ class Session:
                 "classification_results": 1
             }
         ))
-        print(f"Retrieved sessions for {uid}: {sessions}")
+        if os.environ.get("FLASK_ENV") == "development":
+            print(f"Retrieved sessions for {uid}: {sessions}")
         return sessions
 
     @staticmethod
@@ -48,7 +50,8 @@ class Session:
             {"session_id": session_id},
             {"_id": 0}
         )
-        print(f"Fetched session for session_id {session_id}: {session}")
+        if os.environ.get("FLASK_ENV") == "development":
+            print(f"Fetched session for session_id {session_id}: {session}")
         return session
 
     @staticmethod
@@ -91,7 +94,8 @@ class Session:
             if not isinstance(classification_results, dict):
                 return False, "Invalid classification result format"
 
-            print(f"[📝] Updating session {session_id} with result: {classification_results}")
+            if os.environ.get("FLASK_ENV") == "development":
+                print(f"[📝] Updating session {session_id} with result: {classification_results}")
 
             # Fix for accessing nested structure
             results_data = {
@@ -101,7 +105,8 @@ class Session:
                 "classified_at": datetime.datetime.now()
             }
 
-            print(f"[🔍] Database update with data: {results_data}")
+            if os.environ.get("FLASK_ENV") == "development":
+                print(f"[🔍] Database update with data: {results_data}")
 
             result = db.sessions.update_one(
                 {"session_id": session_id},

@@ -1,149 +1,147 @@
-from flask import Blueprint, request, jsonify
-from firebase_admin import auth
-from flask_cors import cross_origin
+from flask import Blueprint, request, jsonify, session
 from models.user_model import User
+from utils.encryption import hash_password, check_password, generate_uid
+from functools import wraps
 import traceback
+import os
 
 auth_bp = Blueprint('auth', __name__)
 
-@auth_bp.route('/verify-token', methods=['POST'])
-def verify_token():
-    """
-    Verifies Firebase ID token and creates the user in MongoDB if not already present.
-    """
+# Authentication middleware
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'uid' not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+@auth_bp.route('/register', methods=['POST'])
+def register():
     try:
-        print("📥 Received /verify-token request")
         data = request.get_json()
-        print(f"📦 Request Data: {data}")
+        name = data.get("name")
+        email = data.get("email")
+        password = data.get("password")
 
-        id_token = data.get('idToken')
-        if not id_token:
-            print("❌ No token found in request")
-            return jsonify({'error': 'Token is required'}), 400
+        if not name or not email or not password:
+            return jsonify({"error": "All fields are required"}), 400
 
-        print(f"🔑 Received ID Token: {id_token}")  # Log the received token
+        existing_user = User.find_by_email(email)
+        if existing_user:
+            return jsonify({"error": "Email already registered"}), 409
 
-        # Verify Firebase ID Token
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            print(f"🔑 Token Decoded: {decoded_token}")
+        uid = generate_uid()
+        hashed_password = hash_password(password)  # Fixed: was incorrectly calling hashed_password instead of hash_password
+        User.create_user(uid, name, email, hashed_password)
 
-            # Validate token claims
-            project_id = "skincare-cbf73"  # Replace with your Firebase project ID
-            if decoded_token.get('aud') != project_id:
-                print("❌ Token audience mismatch")
-                return jsonify({'error': 'Invalid token audience'}), 401
-
-            if not decoded_token.get('iss', '').startswith("https://securetoken.google.com/"):
-                print("❌ Token issuer mismatch")
-                return jsonify({'error': 'Invalid token issuer'}), 401
-
-        except auth.InvalidIdTokenError:
-            print("❌ Invalid Firebase ID token")
-            return jsonify({'error': 'Invalid Firebase ID token'}), 401
-        except auth.ExpiredIdTokenError:
-            print("❌ Firebase ID token has expired")
-            return jsonify({'error': 'Firebase ID token has expired'}), 401
-        except ValueError as e:
-            print(f"❌ Malformed token: {str(e)}")
-            return jsonify({'error': 'Malformed Firebase ID token'}), 400
-        except Exception as e:
-            print(f"❌ Token verification failed: {str(e)}")
-            traceback.print_exc()
-            return jsonify({'error': 'Token verification failed', 'details': str(e)}), 401
-
-        # Extract user details
-        uid = decoded_token.get('uid')
-        email = decoded_token.get('email', None)
-        name = decoded_token.get('name', 'Unknown')
-
-        print(f"👤 UID: {uid}, Email: {email}, Name: {name}")
-
-        if not uid:
-            print("❌ UID missing in decoded token")
-            return jsonify({'error': 'Token verification failed: UID missing'}), 401
-
-        if not email:
-            print(f"⚠️ UID {uid} has no associated email")
-
-        # Check user in MongoDB
-        user = User.find_by_uid(uid)
-        if not user:
-            print("🆕 New user, creating in MongoDB")
-            User.create_user(uid=uid, name=name, email=email)
-        else:
-            print("✅ User exists in DB")
-
-        print("✅ User authenticated and processed")
-        return jsonify({'message': 'User authenticated successfully', 'uid': uid}), 200
+        return jsonify({"message": "User registered successfully", "uid": uid}), 201
 
     except Exception as e:
-        print(f"🔥 Internal Server Error: {str(e)}")
-        traceback.print_exc()
-        return jsonify({
-            'error': 'Internal Server Error',
-            'details': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
+        print("🔥 Registration error:", str(e))
+        if os.environ.get("FLASK_ENV") == "development":
+            traceback.print_exc()
+        return jsonify({"error": "Internal server error"}), 500
 
 
-@auth_bp.route('/check-user-info', methods=['GET', 'POST'])
-def check_user_info():
-    """
-    Checks if the user's name is "Unknown" and requires an update.
-    """
+@auth_bp.route('/login', methods=['POST'])
+def login():
     try:
-        print("📥 Received /check-user-info request")
         data = request.get_json()
-        print(f"📦 Request Data: {data}")
+        email = data.get("email")
+        password = data.get("password")
 
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+
+        user = User.find_by_email(email)
+        if not user:
+            return jsonify({"error": "Invalid credentials"}), 401
+            
+        # Fixed: check against hashed_password field instead of password
+        if not check_password(password, user.get("hashed_password", "")):
+            return jsonify({"error": "Invalid credentials"}), 401
+
+        session['uid'] = user['uid']
+        session['name'] = user['name']
+        session.permanent = True
+
+        return jsonify({"message": "Login successful"}), 200
+
+    except Exception as e:
+        print("🔥 Login error:", str(e))
+        if os.environ.get("FLASK_ENV") == "development":
+            traceback.print_exc()
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@auth_bp.route('/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({"message": "Logged out successfully"}), 200
+
+
+@auth_bp.route('/session-info', methods=['GET'])
+def session_info():
+    if 'uid' not in session:
+        return jsonify({'loggedIn': False}), 200  # Changed to 200 status as this is not an error
+    return jsonify({
+        'loggedIn': True,
+        'uid': session['uid'],
+        'name': session['name']
+    }), 200
+
+
+@auth_bp.route('/check-user-info', methods=['POST'])
+@login_required  # Added login_required decorator
+def check_user_info():
+    try:
+        data = request.get_json()
         uid = data.get('uid')
+
         if not uid:
-            print("❌ UID missing")
             return jsonify({'error': 'UID is required'}), 400
 
         user = User.find_by_uid(uid)
         if not user:
-            print(f"❌ User with UID {uid} not found")
             return jsonify({'error': 'User not found'}), 404
 
         requires_update = user.get("name", "Unknown") == "Unknown"
-        print(f"🔍 Name check result: requiresUpdate = {requires_update}, Name = {user.get('name')}")
-
         return jsonify({'requiresUpdate': requires_update, 'name': user.get("name", "Unknown")}), 200
 
     except Exception as e:
-        print(f"🔥 Internal Server Error: {str(e)}")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        print("🔥 Error:", str(e))
+        if os.environ.get("FLASK_ENV") == "development":
+            traceback.print_exc()
+        return jsonify({'error': "Internal server error"}), 500
 
 
 @auth_bp.route('/update-name', methods=['POST'])
+@login_required  # Added login_required decorator
 def update_name():
     try:
-        print("📥 Received /update-name request")
         data = request.get_json()
-        print(f"📦 Request Data: {data}")
-
         uid = data.get('uid')
         name = data.get('name')
 
-        print(f"📌 Update request: UID={uid}, Name={name}")
-
         if not uid or not name:
-            print("❌ Missing UID or Name")
             return jsonify({'error': 'UID and Name are required'}), 400
+
+        # Added: Check if the UID in the request matches the session UID for security
+        if uid != session.get('uid'):
+            return jsonify({'error': 'Unauthorized access'}), 403
 
         user = User.find_by_uid(uid)
         if not user:
-            print(f"❌ User with UID {uid} not found in DB")
             return jsonify({'error': 'User not found'}), 404
 
         User.update_name(uid, name)
-        print("✅ User name updated successfully")
+        # Update the name in the session as well
+        session['name'] = name
         return jsonify({'message': 'User name updated successfully'}), 200
 
     except Exception as e:
-        print(f"🔥 Internal Server Error: {str(e)}")
-        traceback.print_exc()
-        return jsonify({'error': 'Internal Server Error', 'details': str(e)}), 500
+        print("🔥 Error:", str(e))
+        if os.environ.get("FLASK_ENV") == "development":
+            traceback.print_exc()
+        return jsonify({'error': 'Internal Server Error'}), 500
