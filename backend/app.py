@@ -1,46 +1,27 @@
-from dotenv import load_dotenv
-import os
-load_dotenv()  
 from flask import Flask
-from flask_session import Session
 from flask_cors import CORS
 from routes.auth_routes import auth_bp  
 from routes.session_routes import session_bp
+from config.firebase_config import init_firebase
+import os
 from datetime import timedelta
-from flask_wtf.csrf import CSRFProtect
 
 app = Flask(__name__)
 
-# 🔐 Secret key for session cookies
-app.secret_key = os.environ.get("SECRET_KEY")
-
-# Session configuration
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_PERMANENT"] = True
-app.config["SESSION_USE_SIGNER"] = True
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SECURE"] = os.environ.get("FLASK_ENV") != "development"  # True in production
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.permanent_session_lifetime = timedelta(days=7)
-
-# 🔁 Enable server-side sessions
-Session(app)
-
-# CSRF protection
-csrf = CSRFProtect(app)
-# Exempt the auth routes from CSRF protection for API use
-csrf.exempt(auth_bp)
-
-# ✅ Apply CORS with credentials
+# ✅ Apply CORS to the entire app
 CORS(app,
-     origins=["http://localhost:5173"],  # Changed to list for multiple origins
+     origins="http://localhost:5173",  # Make this a single string, not a list
      supports_credentials=True,
-     allow_headers=["Content-Type", "Authorization", "X-CSRF-TOKEN"],  # Added CSRF token header
+     allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     expose_headers=["Content-Type", "Authorization", "X-CSRF-TOKEN"],  # Added CSRF token header
-     max_age=timedelta(hours=1))
+     expose_headers=["Content-Type", "Authorization"],
+     max_age=timedelta(hours=1))  # Optional: helps with caching preflight
 
-# Blueprints
+# Initialize Firebase
+if not os.environ.get("FLASK_RUN_FROM_CLI"):
+    init_firebase()
+
+# Register Blueprints
 app.register_blueprint(auth_bp, url_prefix='/auth')  
 app.register_blueprint(session_bp, url_prefix='/session')
 

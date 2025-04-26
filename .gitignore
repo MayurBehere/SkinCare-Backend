@@ -176,4 +176,3 @@ backend/ml_model/do7.keras
 backend/ml_model/do9.keras
 backend/ml_model/index_data/index.faiss
 backend/ml_model/index_data/index.pkl
-backend/flask_session/2029240f6d1128be89ddc32729463129
