@@ -9,6 +9,7 @@ import requests
 from PIL import Image
 from io import BytesIO
 import os
+from math import radians, sin, cos, sqrt, asin
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -249,3 +250,121 @@ def update_classification(session_id):
         print("Error in update_classification:", str(e))
         print(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
+
+@session_bp.route("/<session_id>/nearest-dermatologists", methods=["GET"])
+def get_nearest_dermatologists(session_id):
+    USE_MOCK_DATA = False  # Set to True if you want mock data during testing
+
+    def haversine_distance(lat1, lon1, lat2, lon2):
+        # Convert decimal degrees to radians
+        lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+
+        # Haversine formula
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * asin(sqrt(a))
+        r = 6371  # Radius of Earth in kilometers
+        return c * r
+
+    if USE_MOCK_DATA:
+        print("[🔧] Using mock dermatologist data")
+        mock_data = [
+            {
+                "name": "Dr. Sarah Johnson",
+                "vicinity": "123 Health Avenue, Pune",
+                "rating": 4.8,
+                "user_ratings_total": 124,
+                "place_id": "mock-place-1",
+                "distance_km": 2.5
+            },
+            {
+                "name": "Dermatology Specialists",
+                "vicinity": "456 Medical Plaza, Pune",
+                "rating": 4.5,
+                "user_ratings_total": 89,
+                "place_id": "mock-place-2",
+                "distance_km": 4.1
+            },
+        ]
+        return jsonify({"dermatologists": mock_data}), 200
+
+    try:
+        print(f"[📥] Received request for dermatologists near session {session_id}")
+
+        # 1. Fetch session (optional if needed)
+        session_data = Session.get_session_by_id(session_id)
+        if not session_data:
+            return jsonify({"error": "Session not found"}), 404
+
+        # 2. Get coordinates from query params
+        lat = request.args.get("lat")
+        lng = request.args.get("lng")
+
+        if not lat or not lng:
+            return jsonify({"error": "Must provide lat & lng parameters"}), 400
+
+        try:
+            lat = float(lat)
+            lng = float(lng)
+        except ValueError:
+            return jsonify({"error": "Invalid lat/lng format"}), 400
+
+        # 3. Google Places API setup
+        api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+        if not api_key:
+            return jsonify({"error": "Google Places API key not configured"}), 500
+
+        api_url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+        params = {
+            "location": f"{lat},{lng}",
+            "radius": request.args.get("radius", default=10000, type=int),
+            "type": "doctor",
+            "keyword": "dermatologist",
+            "key": api_key
+        }
+
+        # 4. Call Google API
+        response = requests.get(api_url, params=params)
+        if response.status_code != 200:
+            return jsonify({"error": "Failed to fetch from Google Places API"}), 502
+
+        data = response.json()
+        if data.get("status") != "OK":
+            return jsonify({"error": f"Google Places API error: {data.get('error_message', 'Unknown error')}"}), 502
+
+        # 5. Parse and calculate distance
+        dermatologists = []
+        for place in data.get("results", []):
+            # extract coords
+            lat2 = place.get("geometry", {}).get("location", {}).get("lat")
+            lng2 = place.get("geometry", {}).get("location", {}).get("lng")
+            if lat2 is None or lng2 is None:
+                continue
+
+            dist = haversine_distance(lat, lng, lat2, lng2)
+
+            # filter: within 10 km AND at least 4-star
+            if dist > 10 or place.get("rating", 0) < 4:
+                continue
+
+            dermatologists.append({
+                "name": place.get("name", "Unknown"),
+                "vicinity": place.get("vicinity", "Address not available"),
+                "rating": place.get("rating", 0),
+                "user_ratings_total": place.get("user_ratings_total", 0),
+                "place_id": place.get("place_id", ""),
+                "distance_km": round(dist, 2)
+            })
+
+        # 6. Sort by distance & 7. Limit to 4 nearest
+        dermatologists.sort(key=lambda d: d["distance_km"])
+        return jsonify({"dermatologists": dermatologists[:4]}), 200
+
+        # 7. Return top 5 nearest
+        return jsonify({"dermatologists": dermatologists[:5]}), 200
+
+    except Exception as e:
+        print(f"[❌] Error in get_nearest_dermatologists: {e}")
+        print(traceback.format_exc())
+        return jsonify({"error": "Internal server error"}), 500
