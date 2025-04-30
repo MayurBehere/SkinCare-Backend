@@ -9,70 +9,34 @@ auth_bp = Blueprint('auth', __name__)
 @auth_bp.route('/verify-token', methods=['POST'])
 def verify_token():
     """
-    Verifies Firebase ID token and creates the user in MongoDB if not already present.
+    Accepts UID and Email directly from frontend (NO token verification).
+    WARNING: Only for local development.
     """
     try:
         print("📥 Received /verify-token request")
         data = request.get_json()
         print(f"📦 Request Data: {data}")
 
-        id_token = data.get('idToken')
-        if not id_token:
-            print("❌ No token found in request")
-            return jsonify({'error': 'Token is required'}), 400
+        uid = data.get('uid')
+        email = data.get('email')
+        name = data.get('name', 'Unknown')
 
-        print(f"🔑 Received ID Token: {id_token}")  # Log the received token
+        if not uid:
+            print("❌ UID missing")
+            return jsonify({'error': 'UID is required'}), 400
 
-        # Verify Firebase ID Token
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            print(f"🔑 Token Decoded: {decoded_token}")
-
-            # Validate token claims
-            project_id = "skincare-cbf73"  # Replace with your Firebase project ID
-            if decoded_token.get('aud') != project_id:
-                print("❌ Token audience mismatch")
-                return jsonify({'error': 'Invalid token audience'}), 401
-
-            if not decoded_token.get('iss', '').startswith("https://securetoken.google.com/"):
-                print("❌ Token issuer mismatch")
-                return jsonify({'error': 'Invalid token issuer'}), 401
-
-        except auth.InvalidIdTokenError:
-            print("❌ Invalid Firebase ID token 1")
-            return jsonify({'error': 'Invalid Firebase ID token 1'}), 401
-        except auth.ExpiredIdTokenError:
-            print("❌ Firebase ID token has expired 2")
-            return jsonify({'error': 'Firebase ID token has expired 2'}), 401
-        except ValueError as e:
-            print(f"❌ Malformed token: {str(e)}")
-            return jsonify({'error': 'Malformed Firebase ID token'}), 400
-        except Exception as e:
-            print(f"❌ Token verification failed: {str(e)}")
-            traceback.print_exc()
-            return jsonify({'error': 'Token verification failed', 'details': str(e)}), 401
-
-        # Extract user details
-        uid = decoded_token.get('uid')
-        email = decoded_token.get('email', None)
-        name = decoded_token.get('name', 'Unknown')
+        if not email:
+            print("⚠️ Email missing for UID: {uid}")
 
         print(f"👤 UID: {uid}, Email: {email}, Name: {name}")
 
-        if not uid:
-            print("❌ UID missing in decoded token")
-            return jsonify({'error': 'Token verification failed: UID missing'}), 401
-
-        if not email:
-            print(f"⚠️ UID {uid} has no associated email")
-
-        # Check user in MongoDB
+        # Check if user exists in DB
         user = User.find_by_uid(uid)
         if not user:
             print("🆕 New user, creating in MongoDB")
             User.create_user(uid=uid, name=name, email=email)
         else:
-            print("✅ User exists in DB")
+            print("✅ User already exists in DB")
 
         print("✅ User authenticated and processed")
         return jsonify({'message': 'User authenticated successfully', 'uid': uid}), 200
