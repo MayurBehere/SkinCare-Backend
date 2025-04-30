@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 # ✅ Apply CORS to the entire app
 CORS(app,
-     origins="http://localhost:5173",  # Make this a single string, not a list
+     origins=["http://localhost:5173"],  
      supports_credentials=True,
      allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],

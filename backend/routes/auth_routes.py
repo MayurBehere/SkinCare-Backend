@@ -6,12 +6,17 @@ import traceback
 
 auth_bp = Blueprint('auth', __name__)
 
-@auth_bp.route('/verify-token', methods=['POST'])
+@auth_bp.route('/verify-token', methods=['POST', 'OPTIONS'])
+@cross_origin(origins="http://localhost:5173", supports_credentials=True)
 def verify_token():
     """
     Accepts UID and Email directly from frontend (NO token verification).
     WARNING: Only for local development.
     """
+    if request.method == "OPTIONS":
+        # This handles the CORS preflight request
+        return '', 200
+    
     try:
         print("📥 Received /verify-token request")
         data = request.get_json()
@@ -52,6 +57,7 @@ def verify_token():
 
 
 @auth_bp.route('/check-user-info', methods=['GET', 'POST'])
+@cross_origin(origins="http://localhost:5173", supports_credentials=True)
 def check_user_info():
     """
     Checks if the user's name is "Unknown" and requires an update.
@@ -83,6 +89,7 @@ def check_user_info():
 
 
 @auth_bp.route('/update-name', methods=['POST'])
+@cross_origin(origins="http://localhost:5173", supports_credentials=True)
 def update_name():
     try:
         print("📥 Received /update-name request")
